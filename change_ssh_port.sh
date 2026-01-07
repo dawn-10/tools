@@ -23,6 +23,26 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
+echo
+echo "⚠ 即将修改 SSH 端口，存在断连风险"
+echo "👉 请确认："
+echo "   - 当前 SSH 连接可用"
+echo "   - 防火墙可放行新端口"
+echo
+echo "⌛ 键入任意字符以继续（10 秒内无操作将自动退出）"
+
+read -r -n 1 -t 10 INPUT
+
+if [ $? -ne 0 ]; then
+  echo
+  echo "[ 已终止 ] 10 秒内未检测到输入，脚本已安全退出"
+  exit 1
+fi
+
+echo
+echo "[ 继续 ] 已检测到用户输入，继续执行脚本"
+echo
+
 # ---------- 识别 SSH 服务名 ----------
 SSH_SERVICE=""
 if systemctl list-unit-files | grep -q "^ssh.service"; then
@@ -37,9 +57,18 @@ echo "[ 成功 ] SSH 服务名称：$SSH_SERVICE"
 
 # ---------- 备份 ----------
 echo "[ 信息 ] 正在备份 SSH 配置文件"
+BACKUP_DIR="/root/ssh_backup_$(date +%F_%H-%M-%S)"
 mkdir -p "$BACKUP_DIR"
-cp -a /etc/ssh/* "$BACKUP_DIR/"
-echo "[ 成功 ] 配置已备份至：$BACKUP_DIR"
+
+cp -a \
+  /etc/ssh/sshd_config \
+  /etc/ssh/sshd_config.d \
+  /etc/ssh/ssh_config \
+  /etc/ssh/ssh_config.d \
+  /etc/default/ssh \
+  "$BACKUP_DIR" 2>/dev/null
+
+echo "[ 成功 ] SSH 配置已备份至：$BACKUP_DIR"
 
 # ---------- 修改 sshd_config ----------
 SSHD_CONFIG="/etc/ssh/sshd_config"
