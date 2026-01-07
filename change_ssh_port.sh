@@ -54,16 +54,24 @@ sshd -t || fail "SSH 配置校验失败，请检查配置文件"
 ok "SSH 配置校验通过"
 
 ### ===== 重启服务 =====
-info "正在重启 SSH 服务"
-if systemctl list-unit-files | grep -q '^sshd.service'; then
-  systemctl restart sshd
-  ok "SSH 服务（sshd）已重启"
-elif systemctl list-unit-files | grep -q '^ssh.service'; then
-  systemctl restart ssh
-  ok "SSH 服务（ssh）已重启"
+info "正在重载 / 重启 SSH 服务"
+
+if command -v systemctl >/dev/null 2>&1; then
+  if systemctl list-unit-files | grep -q '^sshd.service'; then
+    systemctl restart sshd
+    ok "SSH 服务（sshd）已重启"
+  elif systemctl list-unit-files | grep -q '^ssh.service'; then
+    systemctl restart ssh
+    ok "SSH 服务（ssh）已重启"
+  else
+    info "未发现 systemd SSH 服务，尝试重载 sshd 进程"
+    pkill -HUP sshd && ok "已向 sshd 进程发送 HUP 信号，配置已重载"
+  fi
 else
-  fail "未找到 SSH 服务，无法重启"
+  info "systemctl 不存在，尝试重载 sshd 进程"
+  pkill -HUP sshd && ok "已向 sshd 进程发送 HUP 信号，配置已重载"
 fi
+
 
 ### ===== 完成提示 =====
 echo
