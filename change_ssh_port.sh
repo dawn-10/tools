@@ -1,60 +1,73 @@
 #!/usr/bin/env bash
-# Universal SSH port change script
-# Change SSH port from 22 to 324
-# Works on: Ubuntu / Debian / CentOS / Rocky / Alma / RHEL
+set -euo pipefail
 
-set -e
-
+### ===== 基础参数 =====
 NEW_PORT=324
-SSHD_CONFIG="/etc/ssh/sshd_config"
+SSH_CONF="/etc/ssh/sshd_config"
+TIME_NOW=$(date '+%F %T')
+BACKUP="/etc/ssh/sshd_config.bak.$(date +%F_%H-%M-%S)"
 
-echo "======================================"
-echo " Universal SSH Port Change Script"
-echo " 22  -->  ${NEW_PORT}"
-echo "======================================"
+### ===== 样式 =====
+GREEN="\033[32m"
+RED="\033[31m"
+YELLOW="\033[33m"
+BLUE="\033[34m"
+RESET="\033[0m"
 
-# 必须 root
-if [ "$EUID" -ne 0 ]; then
-  echo "❌ 请使用 root 用户执行"
-  exit 1
-fi
+ok()    { echo -e "${GREEN}[  OK  ]${RESET} $1"; }
+info()  { echo -e "${BLUE}[ INFO ]${RESET} $1"; }
+warn()  { echo -e "${YELLOW}[ WARN ]${RESET} $1"; }
+fail()  { echo -e "${RED}[ FAIL ]${RESET} $1"; exit 1; }
 
-# 检查 sshd_config 是否存在
-if [ ! -f "$SSHD_CONFIG" ]; then
-  echo "❌ 未找到 $SSHD_CONFIG"
-  exit 1
-fi
+clear
 
-# 备份配置
-BACKUP="${SSHD_CONFIG}.bak.$(date +%F_%H-%M-%S)"
-echo "[1/5] 备份 sshd_config -> $BACKUP"
-cp "$SSHD_CONFIG" "$BACKUP"
+echo -e "${BLUE}"
+echo "=================================================="
+echo "   Universal SSH Port Change Script"
+echo "--------------------------------------------------"
+echo "   Change SSH Port : 22  →  ${NEW_PORT}"
+echo "   Start Time      : ${TIME_NOW}"
+echo "=================================================="
+echo -e "${RESET}"
 
-# 删除旧 Port 配置
-echo "[2/5] 清理旧 Port 配置"
-sed -i '/^[[:space:]]*Port[[:space:]]\+/d' "$SSHD_CONFIG"
+### ===== 权限检查 =====
+info "Checking root privileges"
+[[ $EUID -eq 0 ]] || fail "Please run this script as root"
 
-# 写入新端口
-echo "[3/5] 设置新端口 Port ${NEW_PORT}"
-echo "Port ${NEW_PORT}" >> "$SSHD_CONFIG"
+### ===== 备份配置 =====
+info "Backing up sshd_config"
+cp -a "$SSH_CONF" "$BACKUP"
+ok "Backup created: $BACKUP"
 
-# 判断 SSH 服务名（兼容不同发行版）
-echo "[4/5] 重启 SSH 服务"
-if systemctl list-unit-files | grep -q '^sshd\.service'; then
+### ===== 修改配置 =====
+info "Removing existing Port directives"
+sed -i '/^[[:space:]]*Port[[:space:]]\+/d' "$SSH_CONF"
+ok "Old Port entries removed"
+
+info "Setting new SSH port: ${NEW_PORT}"
+echo "Port ${NEW_PORT}" >> "$SSH_CONF"
+ok "New Port configured"
+
+### ===== 配置校验 =====
+info "Validating sshd configuration"
+sshd -t || fail "sshd config validation failed"
+ok "sshd configuration is valid"
+
+### ===== 重启服务 =====
+info "Restarting SSH service"
+if systemctl list-unit-files | grep -q '^sshd.service'; then
   systemctl restart sshd
-elif systemctl list-unit-files | grep -q '^ssh\.service'; then
+  ok "Service restarted: sshd"
+elif systemctl list-unit-files | grep -q '^ssh.service'; then
   systemctl restart ssh
+  ok "Service restarted: ssh"
 else
-  echo "❌ 未找到 ssh/sshd 服务"
-  exit 1
+  fail "SSH service not found"
 fi
 
-# 输出最终生效端口
-echo "[5/5] 当前 SSH 生效端口："
-sshd -T 2>/dev/null | grep '^port '
-
-echo "--------------------------------------"
-echo "✔ 完成"
-echo "请使用新端口登录："
-echo "ssh -p ${NEW_PORT} root@服务器IP"
-echo "======================================"
+### ===== 完成 =====
+echo
+echo -e "${GREEN}✔ SSH port successfully changed to ${NEW_PORT}${RESET}"
+echo -e "${YELLOW}⚠ Please ensure port ${NEW_PORT} is allowed in your firewall${RESET}"
+echo -e "${BLUE}ℹ Test command:${RESET} ssh -p ${NEW_PORT} user@server_ip"
+echo
